@@ -235,18 +235,22 @@ class FPGrowth private (
       data: RDD[Array[Item]],
       minCount: Long,
       partitioner: Partitioner): Array[Item] = {
+    //      Item Array, minCount, Partitioner 인자
+        
     data.flatMap { t =>
       val uniq = t.toSet
+      //    Set을 통해 중복 제거
       if (t.length != uniq.size) {
+          // 만약 중복 제거 후 길이 != 중복 제거 전 길이라면 예외 Throw
         throw new SparkException(s"Items in a transaction must be unique but got ${t.toSeq}.")
       }
       t
-    }.map(v => (v, 1L))
-      .reduceByKey(partitioner, _ + _)
-      .filter(_._2 >= minCount)
-      .collect()
-      .sortBy(-_._2)
-      .map(_._1)
+    }.map(v => (v, 1L)) // (v, 1L) 맵 형태로 저장
+      .reduceByKey(partitioner, _ + _)  // ReduceByKey 수행, 요소끼리 더함 (Interger + Integer)
+      .filter(_._2 >= minCount) // minCount 보다 높은 값만 filtering
+      .collect() // collect 작업 수행
+      .sortBy(-_._2) // 내림차순으로 정렬
+      .map(_._1) // Integer 제거
   }
 
   /**
@@ -262,16 +266,23 @@ class FPGrowth private (
       minCount: Long,
       freqItems: Array[Item],
       partitioner: Partitioner): RDD[FreqItemset[Item]] = {
+          // minCount, freqItems, Partitioner 인자
     val itemToRank = freqItems.zipWithIndex.toMap
     data.flatMap { transaction =>
       genCondTransactions(transaction, itemToRank, partitioner)
+      // genCondTransactions 를 통해 conditional transactions을 생성 후 저장
     }.aggregateByKey(new FPTree[Int], partitioner.numPartitions)(
+        // aggregateByKey를 이용해 각각 에 대해 값을 더함
       (tree, transaction) => tree.add(transaction, 1L),
+      // transaction + 1
       (tree1, tree2) => tree1.merge(tree2))
+      // tree1과 tree2를 merge
     .flatMap { case (part, tree) =>
       tree.extract(minCount, x => partitioner.getPartition(x) == part)
+      // FPtree에서 Frequent item 추출
     }.map { case (ranks, count) =>
       new FreqItemset(ranks.map(i => freqItems(i)).toArray, count)
+      // 새로운 frequent Items을 Map에 추가
     }
   }
 
